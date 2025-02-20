@@ -135,7 +135,7 @@
       if (userX !== null && userY !== null) {
         ctx.save();
         // Rotate map by -heading so that the fixed arrow (drawn at the center) always points up.
-        let rotationAngle =  isFirst ? (heading-110) * Math.PI / 180 : (heading) * Math.PI / 180;
+        let rotationAngle =  (heading) * Math.PI / 180;
         ctx.translate(canvas.width/2, canvas.height/2);
         ctx.rotate(rotationAngle);
         // Translate so that the user's world coordinate appears at the center.
@@ -153,7 +153,39 @@
           ctx.stroke();
         }
         ctx.restore();
-        isFirst = false;
+      } else {
+        drawFloorPlan();
+      }
+      
+      // Draw a fixed arrow at the canvas center that always points upward.
+      drawArrowAtCenter();
+      
+    }
+    function drawEverythingClick() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // If a starting position is set, we rotate the map so that the fixed arrow remains upward.
+      if (userX !== null && userY !== null) {
+        ctx.save();
+        // Rotate map by -heading so that the fixed arrow (drawn at the center) always points up.
+        let rotationAngle =  (heading-110) * Math.PI / 180;
+        ctx.translate(canvas.width/2, canvas.height/2);
+        ctx.rotate(rotationAngle);
+        // Translate so that the user's world coordinate appears at the center.
+        ctx.translate(-userX, -userY);
+        drawFloorPlan();
+        // Draw trajectory (in world coordinates)
+        if (trajectoryPoints.length > 1) {
+          ctx.beginPath();
+          ctx.strokeStyle = "red";
+          ctx.lineWidth = 2;
+          trajectoryPoints.forEach((pt, idx) => {
+            if (idx === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.stroke();
+        }
+        ctx.restore();
       } else {
         drawFloorPlan();
       }
@@ -201,7 +233,7 @@
       trajectoryPoints = [];
       trajectoryPoints.push({ x: userX, y: userY });
       stepCount = 0;
-      drawEverything();
+      drawEverythingClick();
     });
     
     // C) Device orientation: update sensor heading.
