@@ -32,17 +32,36 @@
             let userX = 0, userY = 0;  // Initial position
             let speed = 0;  // Estimated speed
             let heading = 0;  // User's direction
+            let lastAccX = 0, lastAccY = 0, lastAccZ = 0;
+            let alpha = 0.8; // Smoothing factor for high-pass filter
 
             // Handle motion (acceleration-based movement)
             window.addEventListener("devicemotion", (event) => {
-                let accX = kfAccel.filter(event.accelerationIncludingGravity.x || 0);
-                let accY = kfAccel.filter(event.accelerationIncludingGravity.y || 0);
+                let rawAccX = event.accelerationIncludingGravity.x || 0;
+                let rawAccY = event.accelerationIncludingGravity.y || 0;
+                let rawAccZ = event.accelerationIncludingGravity.z || 0;
 
+                // High-pass filter to remove gravity
+                let accX = alpha * (lastAccX + rawAccX - lastAccX);
+                let accY = alpha * (lastAccY + rawAccY - lastAccY);
+                let accZ = alpha * (lastAccZ + rawAccZ - lastAccZ);
+
+                lastAccX = rawAccX;
+                lastAccY = rawAccY;
+                lastAccZ = rawAccZ;
+
+                // Apply Kalman filter for smoother values
+                accX = kfAccel.filter(accX);
+                accY = kfAccel.filter(accY);
+
+                // Detect if the device is actually moving
                 let movement = Math.sqrt(accX * accX + accY * accY);
                 if (movement > 0.1) { // Threshold to avoid false movement
                     speed += movement * 0.05; // Scale factor for smoother updates
                     userX += speed * Math.cos(heading * (Math.PI / 180));
                     userY += speed * Math.sin(heading * (Math.PI / 180));
+                } else {
+                    speed *= 0.9; // Apply damping to prevent drift when stationary
                 }
 
                 document.getElementById("acceleration").innerText = `X=${accX.toFixed(2)}, Y=${accY.toFixed(2)}`;
