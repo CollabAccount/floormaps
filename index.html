@@ -75,8 +75,9 @@
             window.addEventListener("devicemotion", (event) => {
                 let acc = event.accelerationIncludingGravity;
                 let acceleration = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
-
+                document.getElementById('messages').innerHTML+= `<br> Accelration: ${acceleration}, PrevAcceleration: ${prevAcceleration}`
                 if (Math.abs(acceleration - prevAcceleration) > 2) { // Step detection threshold
+                    document.getElementById('messages').innerHTML+= `<br> Moving user`;
                     moveUser(currentHeading);
                 }
 
