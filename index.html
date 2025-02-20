@@ -50,18 +50,18 @@
         document.getElementById("start-btn").addEventListener("click", requestPermissions);
 
         async function requestPermissions() {
-            document.getElementById('messages').innerHTML+="\nhi"
+
             if (typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
                     let response = await DeviceMotionEvent.requestPermission();
                     if (response === 'granted') {
-                        document.getElementById('messages').innerHTML+="\nPermission granted for Motion & Orientation APIs!";
+                        // document.getElementById('messages').innerHTML+="\nPermission granted for Motion & Orientation APIs!";
                         startTracking();
                     } else {
-                        document.getElementById('messages').innerHTML+= "\nPermission denied";
+                        // document.getElementById('messages').innerHTML+= "\nPermission denied";
                     }
                 } catch (e) {
-                    document.getElementById('messages').innerHTML+= "\nError requesting permission";
+                    // document.getElementById('messages').innerHTML+= "\nError requesting permission";
                 }
             } else {
                 startTracking(); // Non-iOS devices don't require explicit permission
@@ -73,7 +73,7 @@
             window.addEventListener("deviceorientation", (event) => {
                 let heading = event.alpha; // Compass direction in degrees
                 let direction = getDirection(heading);
-                document.getElementById('messages').innerHTML+=`\nDirection:", ${direction}`;
+                // document.getElementById('messages').innerHTML+=`\nDirection:", ${direction}`;
             });
 
             // Detect steps (movement)
@@ -81,6 +81,7 @@
             let prevAcceleration = 0;
 
             window.addEventListener("devicemotion", (event) => {
+
                 let acc = event.accelerationIncludingGravity;
                 let acceleration = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
                 
@@ -114,7 +115,7 @@
             if (direction === "South") position.y += STEP_SIZE;
             if (direction === "East") position.x += STEP_SIZE;
             if (direction === "West") position.x -= STEP_SIZE;
-
+            document.getElementById('messages').innerHTML += `\n position :  ${position.x} , ${position.y}`;
             document.getElementById("user-dot").style.transform = `translate(${position.x}px, ${position.y}px)`;
         }
     </script>
