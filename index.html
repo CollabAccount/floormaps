@@ -48,7 +48,6 @@
         document.getElementById("start-btn").addEventListener("click", requestPermissions);
 
         async function requestPermissions() {
-            // alert("hi")
             if (typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
                     let response = await DeviceMotionEvent.requestPermission();
@@ -56,10 +55,10 @@
                         alert("Permission granted for Motion & Orientation APIs!");
                         startTracking();
                     } else {
-                        // alert("Permission denied");
+
                     }
                 } catch (e) {
-                    // alert("Error requesting permission", e);
+ 
                 }
             } else {
                 startTracking(); // Non-iOS devices don't require explicit permission
@@ -71,7 +70,7 @@
             window.addEventListener("deviceorientation", (event) => {
                 let heading = event.alpha; // Compass direction in degrees
                 let direction = getDirection(heading);
-                // alert("Direction:", direction);
+
             });
 
             // Detect steps (movement)
@@ -84,7 +83,7 @@
                 
                 if (Math.abs(acceleration - prevAcceleration) > 2) { // Threshold for step detection
                     stepCount++;
-                   // alert("Step detected! Total Steps:", stepCount);
+    
                     moveUser();
                 }
 
