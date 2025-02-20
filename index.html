@@ -71,6 +71,7 @@
   <!-- Kalman filter library for smoothing orientation -->
   <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
   <script>
+    let isFirst = true;
     /********************************************************
      * 1) LOAD THE FLOOR PLAN IMAGE INTO THE CANVAS
      ********************************************************/
@@ -134,7 +135,7 @@
       if (userX !== null && userY !== null) {
         ctx.save();
         // Rotate map by -heading so that the fixed arrow (drawn at the center) always points up.
-        let rotationAngle =  (heading-110) * Math.PI / 180;
+        let rotationAngle =  isFirst ? (heading-110) * Math.PI / 180 : (heading) * Math.PI / 180;
         ctx.translate(canvas.width/2, canvas.height/2);
         ctx.rotate(rotationAngle);
         // Translate so that the user's world coordinate appears at the center.
@@ -158,6 +159,7 @@
       
       // Draw a fixed arrow at the canvas center that always points upward.
       drawArrowAtCenter();
+      isFirst = false;
     }
     
     function drawArrowAtCenter() {
