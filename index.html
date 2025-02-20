@@ -153,13 +153,14 @@
           ctx.stroke();
         }
         ctx.restore();
+        isFirst = false;
       } else {
         drawFloorPlan();
       }
       
       // Draw a fixed arrow at the canvas center that always points upward.
       drawArrowAtCenter();
-      isFirst = false;
+      
     }
     
     function drawArrowAtCenter() {
