@@ -110,7 +110,7 @@
         function moveUser() {
             let heading = event.alpha; // Get current heading
             let direction = getDirection(heading);
-
+            document.getElementById('messages').innerHTML += `\n Direction : ${direction}`;
             if (direction === "North") position.y -= STEP_SIZE;
             if (direction === "South") position.y += STEP_SIZE;
             if (direction === "East") position.x += STEP_SIZE;
