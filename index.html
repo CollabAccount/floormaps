@@ -1,109 +1,195 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Location Tracking</title>
-    <style>
-        body {
-            text-align: center;
-        }
-        #floor-map {
-            width: 90%;
-            height: 400px;
-            background-color: lightgray;
-            position: relative;
-            margin: 20px auto;
-            overflow: hidden;
-        }
-        #user-dot {
-            width: 20px;
-            height: 20px;
-            background-color: blue;
-            border-radius: 50%;
-            position: absolute;
-            top: 100px;
-            left: 100px;
-            transition: all 0.2s ease-in-out;
-        }
-        #start-btn {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Motion, Step Counter & Trajectory Visualization with Calibration</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+    h1 { color: #333; }
+    p { font-size: 18px; }
+    #status { font-weight: bold; color: blue; }
+    #trajectoryCanvas { border: 1px solid #000; margin-top: 20px; }
+    #calibrateButton { margin-top: 10px; padding: 8px 16px; font-size: 16px; }
+  </style>
 </head>
 <body>
+  <h1>Motion, Step Counter & Trajectory Tracking</h1>
+  <p><strong>Acceleration (Filtered):</strong> <span id="acceleration">Waiting...</span></p>
+  <p><strong>Direction (Effective):</strong> <span id="direction">Waiting...</span></p>
+  <p><strong>Estimated Position:</strong> X=<span id="posX">0</span>, Y=<span id="posY">0</span></p>
+  <p><strong>Steps Counted:</strong> <span id="steps">0</span></p>
+  <p id="status">Initializing sensors...</p>
+  <button id="calibrateButton">Calibrate Forward</button>
+  <canvas id="trajectoryCanvas" width="500" height="500"></canvas>
 
-    <h2>Live Location Tracking on Floor Map</h2>
-    <button id="start-btn">Start Tracking</button>
-    <div id="floor-map">
-        <div id="user-dot"></div>
-    </div>
-    <div id="messages"></div>
+  <!-- Kalman filter library for smoothing orientation -->
+  <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (!window.DeviceMotionEvent || !window.DeviceOrientationEvent) {
+        document.getElementById("status").innerText =
+          "Your device does not support motion tracking!";
+        return;
+      }
 
-    <script>
-        let position = { x: 100, y: 100 }; // Initial user position
-        const STEP_SIZE = 10; // Pixels per step
-        let currentHeading = 0; // Store the latest heading
+      // Kalman filter for smoothing orientation (heading)
+      const kfGyro = new KalmanFilter();
+      // Kalman filters for position smoothing
+      const kfPosX = new KalmanFilter();
+      const kfPosY = new KalmanFilter();
 
-        document.getElementById("start-btn").addEventListener("click", requestPermissions);
+      // Position and step tracking (units in meters)
+      let userX = 0, userY = 0;
+      let heading = 0; // effective heading relative to calibration
+      let stepCount = 0;
+      const stepLength = 0.7;           // Estimated step length in meters
+      // Thresholds for step detection (tweak as needed)
+      const stepThresholdHigh = 1.5;    
+      const stepThresholdLow  = 1.0;    
+      let lastStepTime = 0;
+      let stepDetected = false;         // Used to mark a potential step
 
-        async function requestPermissions() {
-            if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                try {
-                    let response = await DeviceMotionEvent.requestPermission();
-                    if (response === 'granted') {
-                        startTracking();
-                    }
-                } catch (e) {
-                    console.error("Permission request failed", e);
-                }
-            } else {
-                startTracking(); // For non-iOS devices
-            }
+      // Gravity estimation variables (for high-pass filtering)
+      let gravityX = 0, gravityY = 0, gravityZ = 0;
+      const alpha = 0.8; // Smoothing factor for gravity estimation
+
+      // Trajectory storage (in meters)
+      let trajectoryPoints = [{ x: 0, y: 0 }];
+
+      // Calibration: the baseline heading is recorded when the user clicks calibrate.
+      let baselineHeading = null;
+
+      // Setup the canvas for drawing the trajectory.
+      const canvas = document.getElementById("trajectoryCanvas");
+      const ctx = canvas.getContext("2d");
+      const scale = 50; // 50 pixels per meter
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+
+      function drawTrajectory() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Draw grid lines for reference
+        ctx.beginPath();
+        ctx.strokeStyle = "#ccc";
+        ctx.moveTo(centerX, 0);
+        ctx.lineTo(centerX, canvas.height);
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(canvas.width, centerY);
+        ctx.stroke();
+
+        // Draw the path in red
+        ctx.beginPath();
+        ctx.strokeStyle = "red";
+        trajectoryPoints.forEach((pt, index) => {
+          let px = centerX + pt.x * scale;
+          let py = centerY - pt.y * scale; // invert Y axis for canvas
+          if (index === 0) {
+            ctx.moveTo(px, py);
+          } else {
+            ctx.lineTo(px, py);
+          }
+        });
+        ctx.stroke();
+
+        // Draw blue dots at each trajectory point
+        trajectoryPoints.forEach((pt) => {
+          let px = centerX + pt.x * scale;
+          let py = centerY - pt.y * scale;
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, 2 * Math.PI);
+          ctx.fillStyle = "blue";
+          ctx.fill();
+        });
+      }
+
+      // Button to calibrate forward direction
+      document.getElementById("calibrateButton").addEventListener("click", () => {
+        // When calibrating, use the current filtered orientation as the baseline.
+        baselineHeading = kfGyro.lastMeasurement || 0;
+        alert("Calibrated! Your current direction is now considered 'forward'.");
+      });
+
+      // Device motion event (for step detection and acceleration)
+      window.addEventListener("devicemotion", (event) => {
+        const rawAccX = event.accelerationIncludingGravity.x || 0;
+        const rawAccY = event.accelerationIncludingGravity.y || 0;
+        const rawAccZ = event.accelerationIncludingGravity.z || 0;
+
+        // Estimate gravity using a low-pass filter
+        gravityX = alpha * gravityX + (1 - alpha) * rawAccX;
+        gravityY = alpha * gravityY + (1 - alpha) * rawAccY;
+        gravityZ = alpha * gravityZ + (1 - alpha) * rawAccZ;
+
+        // Calculate linear acceleration (remove gravity)
+        const linearAccX = rawAccX - gravityX;
+        const linearAccY = rawAccY - gravityY;
+        const linearAccZ = rawAccZ - gravityZ;
+
+        // Magnitude of linear acceleration
+        const movement = Math.sqrt(
+          linearAccX * linearAccX +
+          linearAccY * linearAccY +
+          linearAccZ * linearAccZ
+        );
+
+        const currentTime = new Date().getTime();
+
+        // Step detection with a 300ms debounce
+        if (currentTime - lastStepTime > 300) {
+          if (!stepDetected && movement > stepThresholdHigh) {
+            stepDetected = true;
+          } else if (stepDetected && movement < stepThresholdLow) {
+            stepCount++;
+            lastStepTime = currentTime;
+            stepDetected = false;
+
+            // Compute new position update using the calibrated heading.
+            // If baselineHeading hasn't been set, use the current heading as is.
+            let effectiveHeading = heading;
+            // Update position based on effective heading
+            let newX = userX + stepLength * Math.cos(effectiveHeading * (Math.PI / 180));
+            let newY = userY + stepLength * Math.sin(effectiveHeading * (Math.PI / 180));
+
+            // Smooth the new positions with Kalman filtering
+            userX = kfPosX.filter(newX);
+            userY = kfPosY.filter(newY);
+
+            trajectoryPoints.push({ x: userX, y: userY });
+            drawTrajectory();
+
+            document.getElementById("steps").innerText = stepCount;
+            document.getElementById("posX").innerText = userX.toFixed(2);
+            document.getElementById("posY").innerText = userY.toFixed(2);
+          }
         }
 
-        function startTracking() {
-            // Listen for compass direction
-            window.addEventListener("deviceorientation", (event) => {
-                currentHeading = event.alpha; // Store heading globally
-            });
+        document.getElementById("acceleration").innerText =
+          `X=${linearAccX.toFixed(2)}, Y=${linearAccY.toFixed(2)}, Z=${linearAccZ.toFixed(2)}`;
+      });
 
-            // Detect steps (movement)
-            let prevAcceleration = 0;
-            window.addEventListener("devicemotion", (event) => {
-                let acc = event.acceleration;
-                let acceleration = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
-                document.getElementById('messages').innerHTML+= `<br> Accelration: ${acceleration}, PrevAcceleration: ${prevAcceleration}`
-                if (Math.abs(acceleration - prevAcceleration) > 2) { // Step detection threshold
-                    document.getElementById('messages').innerHTML+= `<br> Moving user`;
-                    moveUser(currentHeading);
-                }
-
-                prevAcceleration = acceleration;
-            });
+      // Device orientation event (for heading)
+      window.addEventListener("deviceorientation", (event) => {
+        let filteredHeading = kfGyro.filter(event.alpha || 0);
+        // If not calibrated yet, treat current reading as effective heading.
+        if (baselineHeading === null) {
+          heading = filteredHeading;
+        } else {
+          // Compute effective heading relative to the calibrated "forward"
+          heading = (filteredHeading - baselineHeading + 360) % 360;
         }
+        document.getElementById("direction").innerText = `${heading.toFixed(2)}°`;
+      });
 
-        function getDirection(heading) {
-            if ((heading >= 315 && heading <= 360) || (heading >= 0 && heading < 45)) return "North";
-            if (heading >= 45 && heading < 135) return "East";
-            if (heading >= 135 && heading < 225) return "South";
-            if (heading >= 225 && heading < 315) return "West";
-        }
-
-        function moveUser(heading) {
-            let direction = getDirection(heading);
-
-            if (direction === "North") position.y -= STEP_SIZE;
-            if (direction === "South") position.y += STEP_SIZE;
-            if (direction === "East") position.x += STEP_SIZE;
-            if (direction === "West") position.x -= STEP_SIZE;
-
-            document.getElementById('messages').innerHTML += `<br>Position: (${position.x}, ${position.y})`;
-            document.getElementById("user-dot").style.transform = `translate(${position.x}px, ${position.y}px)`;
-        }
-    </script>
-
+      document.getElementById("status").innerText = "Sensors are active!";
+      drawTrajectory();
+    });
+  </script>
 </body>
 </html>
+
+
+
+
+
+
