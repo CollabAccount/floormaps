@@ -3,24 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Motion, Step Counter & Trajectory Visualization with Calibration</title>
+  <title>Motion, Step Counter & Trajectory Visualization</title>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
     h1 { color: #333; }
     p { font-size: 18px; }
     #status { font-weight: bold; color: blue; }
     #trajectoryCanvas { border: 1px solid #000; margin-top: 20px; }
-    #calibrateButton { margin-top: 10px; padding: 8px 16px; font-size: 16px; }
   </style>
 </head>
 <body>
-  <h1>Motion, Step Counter & Trajectory Tracking</h1>
+  <h1>Motion, Step Counter, and Trajectory Tracking</h1>
   <p><strong>Acceleration (Filtered):</strong> <span id="acceleration">Waiting...</span></p>
-  <p><strong>Direction (Effective):</strong> <span id="direction">Waiting...</span></p>
+  <p><strong>Direction (Filtered):</strong> <span id="direction">Waiting...</span></p>
   <p><strong>Estimated Position:</strong> X=<span id="posX">0</span>, Y=<span id="posY">0</span></p>
   <p><strong>Steps Counted:</strong> <span id="steps">0</span></p>
   <p id="status">Initializing sensors...</p>
-  <button id="calibrateButton">Calibrate Forward</button>
   <canvas id="trajectoryCanvas" width="500" height="500"></canvas>
 
   <!-- Kalman filter library for smoothing orientation -->
@@ -33,22 +31,18 @@
         return;
       }
 
-      // Kalman filter for smoothing orientation (heading)
+      // Kalman filter for smoothing the orientation (heading)
       const kfGyro = new KalmanFilter();
-      // Kalman filters for position smoothing
-      const kfPosX = new KalmanFilter();
-      const kfPosY = new KalmanFilter();
 
       // Position and step tracking (units in meters)
       let userX = 0, userY = 0;
-      let heading = 0; // effective heading relative to calibration
+      let heading = 0;
       let stepCount = 0;
       const stepLength = 0.7;           // Estimated step length in meters
-      // Thresholds for step detection (tweak as needed)
-      const stepThresholdHigh = 1.5;    
-      const stepThresholdLow  = 1.0;    
+      const stepThresholdHigh = 1.5;    // Thresholds for step detection
+      const stepThresholdLow = 1.0;
       let lastStepTime = 0;
-      let stepDetected = false;         // Used to mark a potential step
+      let stepDetected = false;
 
       // Gravity estimation variables (for high-pass filtering)
       let gravityX = 0, gravityY = 0, gravityZ = 0;
@@ -57,9 +51,6 @@
       // Trajectory storage (in meters)
       let trajectoryPoints = [{ x: 0, y: 0 }];
 
-      // Calibration: the baseline heading is recorded when the user clicks calibrate.
-      let baselineHeading = null;
-
       // Setup the canvas for drawing the trajectory.
       const canvas = document.getElementById("trajectoryCanvas");
       const ctx = canvas.getContext("2d");
@@ -67,9 +58,10 @@
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
 
+      // Draw the trajectory (clear and redraw all points and connecting lines)
       function drawTrajectory() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // Draw grid lines for reference
+        // Optionally draw grid/center lines for reference
         ctx.beginPath();
         ctx.strokeStyle = "#ccc";
         ctx.moveTo(centerX, 0);
@@ -78,12 +70,12 @@
         ctx.lineTo(canvas.width, centerY);
         ctx.stroke();
 
-        // Draw the path in red
+        // Draw the connecting path in red
         ctx.beginPath();
         ctx.strokeStyle = "red";
         trajectoryPoints.forEach((pt, index) => {
           let px = centerX + pt.x * scale;
-          let py = centerY - pt.y * scale; // invert Y axis for canvas
+          let py = centerY - pt.y * scale; // invert Y (canvas Y grows downward)
           if (index === 0) {
             ctx.moveTo(px, py);
           } else {
@@ -92,7 +84,7 @@
         });
         ctx.stroke();
 
-        // Draw blue dots at each trajectory point
+        // Draw a small blue dot at each trajectory point
         trajectoryPoints.forEach((pt) => {
           let px = centerX + pt.x * scale;
           let py = centerY - pt.y * scale;
@@ -103,15 +95,9 @@
         });
       }
 
-      // Button to calibrate forward direction
-      document.getElementById("calibrateButton").addEventListener("click", () => {
-        // When calibrating, use the current filtered orientation as the baseline.
-        baselineHeading = kfGyro.lastMeasurement || 0;
-        alert("Calibrated! Your current direction is now considered 'forward'.");
-      });
-
-      // Device motion event (for step detection and acceleration)
+      // Listen for device motion events
       window.addEventListener("devicemotion", (event) => {
+        // Get raw acceleration values including gravity
         const rawAccX = event.accelerationIncludingGravity.x || 0;
         const rawAccY = event.accelerationIncludingGravity.y || 0;
         const rawAccZ = event.accelerationIncludingGravity.z || 0;
@@ -121,12 +107,12 @@
         gravityY = alpha * gravityY + (1 - alpha) * rawAccY;
         gravityZ = alpha * gravityZ + (1 - alpha) * rawAccZ;
 
-        // Calculate linear acceleration (remove gravity)
+        // Calculate linear acceleration by removing gravity
         const linearAccX = rawAccX - gravityX;
         const linearAccY = rawAccY - gravityY;
         const linearAccZ = rawAccZ - gravityZ;
 
-        // Magnitude of linear acceleration
+        // Overall magnitude of linear acceleration
         const movement = Math.sqrt(
           linearAccX * linearAccX +
           linearAccY * linearAccY +
@@ -135,50 +121,43 @@
 
         const currentTime = new Date().getTime();
 
-        // Step detection with a 300ms debounce
+        // Step detection logic with debounce (300ms)
         if (currentTime - lastStepTime > 300) {
+          // Detect rising edge of a step
           if (!stepDetected && movement > stepThresholdHigh) {
             stepDetected = true;
-          } else if (stepDetected && movement < stepThresholdLow) {
+          }
+          // Confirm step when movement drops below the lower threshold
+          else if (stepDetected && movement < stepThresholdLow) {
             stepCount++;
             lastStepTime = currentTime;
             stepDetected = false;
 
-            // Compute new position update using the calibrated heading.
-            // If baselineHeading hasn't been set, use the current heading as is.
-            let effectiveHeading = heading;
-            // Update position based on effective heading
-            let newX = userX + stepLength * Math.cos(effectiveHeading * (Math.PI / 180));
-            let newY = userY + stepLength * Math.sin(effectiveHeading * (Math.PI / 180));
+            // Update estimated position using current heading and step length
+            userX += stepLength * Math.cos(heading * (Math.PI / 180));
+            userY += stepLength * Math.sin(heading * (Math.PI / 180));
 
-            // Smooth the new positions with Kalman filtering
-            userX = kfPosX.filter(newX);
-            userY = kfPosY.filter(newY);
-
+            // Save this new position in the trajectory and redraw
             trajectoryPoints.push({ x: userX, y: userY });
             drawTrajectory();
 
+            // Update displayed step count and position
             document.getElementById("steps").innerText = stepCount;
             document.getElementById("posX").innerText = userX.toFixed(2);
             document.getElementById("posY").innerText = userY.toFixed(2);
           }
         }
 
+        // Show filtered linear acceleration for debugging
         document.getElementById("acceleration").innerText =
-          `X=${linearAccX.toFixed(2)}, Y=${linearAccY.toFixed(2)}, Z=${linearAccZ.toFixed(2)}`;
+          X=${linearAccX.toFixed(2)}, Y=${linearAccY.toFixed(2)}, Z=${linearAccZ.toFixed(2)};
       });
 
-      // Device orientation event (for heading)
+      // Listen for device orientation events (for heading)
       window.addEventListener("deviceorientation", (event) => {
-        let filteredHeading = kfGyro.filter(event.alpha || 0);
-        // If not calibrated yet, treat current reading as effective heading.
-        if (baselineHeading === null) {
-          heading = filteredHeading;
-        } else {
-          // Compute effective heading relative to the calibrated "forward"
-          heading = (filteredHeading - baselineHeading + 360) % 360;
-        }
-        document.getElementById("direction").innerText = `${heading.toFixed(2)}°`;
+        // Use alpha (compass heading) as the reference direction
+        heading = kfGyro.filter(event.alpha || 0);
+        document.getElementById("direction").innerText = ${heading.toFixed(2)}°;
       });
 
       document.getElementById("status").innerText = "Sensors are active!";
@@ -187,9 +166,3 @@
   </script>
 </body>
 </html>
-
-
-
-
-
-
