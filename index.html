@@ -68,7 +68,6 @@
             // Listen for compass direction
             window.addEventListener("deviceorientation", (event) => {
                 currentHeading = event.alpha; // Store heading globally
-                document.getElementById('messages').innerHTML += `<br>Direction: ${getDirection(currentHeading)}`;
             });
 
             // Detect steps (movement)
