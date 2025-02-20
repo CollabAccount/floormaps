@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Location Tracking</title>
+    <style>
+        body {
+            text-align: center;
+        }
+        #floor-map {
+            width: 90%;
+            height: 400px;
+            background-color: lightgray;
+            position: relative;
+            margin: 20px auto;
+            overflow: hidden;
+        }
+        #user-dot {
+            width: 20px;
+            height: 20px;
+            background-color: blue;
+            border-radius: 50%;
+            position: absolute;
+            top: 100px; /* Initial Y position */
+            left: 100px; /* Initial X position */
+            transition: all 0.2s ease-in-out;
+        }
+        #start-btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Live Location Tracking on Floor Map</h2>
+    <button id="start-btn">Start Tracking</button>
+    <div id="floor-map">
+        <div id="user-dot"></div>
+    </div>
+
+    <script>
+        let position = { x: 100, y: 100 }; // Initial user position (e.g., MR10)
+        const STEP_SIZE = 10; // Pixels per step
+
+        document.getElementById("start-btn").addEventListener("click", requestPermissions);
+
+        async function requestPermissions() {
+            alert("hi")
+            if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                try {
+                    let response = await DeviceMotionEvent.requestPermission();
+                    if (response === 'granted') {
+                        alert("Permission granted for Motion & Orientation APIs!");
+                        startTracking();
+                    } else {
+                        alert("Permission denied");
+                    }
+                } catch (e) {
+                    alert("Error requesting permission", e);
+                }
+            } else {
+                startTracking(); // Non-iOS devices don't require explicit permission
+            }
+        }
+
+        function startTracking() {
+            // Detect direction (compass)
+            window.addEventListener("deviceorientation", (event) => {
+                let heading = event.alpha; // Compass direction in degrees
+                let direction = getDirection(heading);
+                alert("Direction:", direction);
+            });
+
+            // Detect steps (movement)
+            let stepCount = 0;
+            let prevAcceleration = 0;
+
+            window.addEventListener("devicemotion", (event) => {
+                let acc = event.accelerationIncludingGravity;
+                let acceleration = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+                
+                if (Math.abs(acceleration - prevAcceleration) > 2) { // Threshold for step detection
+                    stepCount++;
+                   alert("Step detected! Total Steps:", stepCount);
+                    moveUser();
+                }
+
+                prevAcceleration = acceleration;
+            });
+        }
+
+        function getDirection(heading) {
+            if ((heading >= 315 && heading <= 360) || (heading >= 0 && heading < 45)) {
+                return "North";
+            } else if (heading >= 45 && heading < 135) {
+                return "East";
+            } else if (heading >= 135 && heading < 225) {
+                return "South";
+            } else if (heading >= 225 && heading < 315) {
+                return "West";
+            }
+        }
+
+        function moveUser() {
+            let heading = event.alpha; // Get current heading
+            let direction = getDirection(heading);
+
+            if (direction === "North") position.y -= STEP_SIZE;
+            if (direction === "South") position.y += STEP_SIZE;
+            if (direction === "East") position.x += STEP_SIZE;
+            if (direction === "West") position.x -= STEP_SIZE;
+
+            document.getElementById("user-dot").style.transform = `translate(${position.x}px, ${position.y}px)`;
+        }
+    </script>
+
+</body>
+</html>
