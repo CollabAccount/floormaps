@@ -40,25 +40,28 @@
     <div id="floor-map">
         <div id="user-dot"></div>
     </div>
+    <div id="messages">
+    </div>
 
     <script>
-        let position = { x: 100, y: 100 }; // Initial user position (e.g., MR10)
+        let position = { x: 1, y: 1 }; // Initial user position (e.g., MR10)
         const STEP_SIZE = 10; // Pixels per step
 
         document.getElementById("start-btn").addEventListener("click", requestPermissions);
 
         async function requestPermissions() {
+            document.getElementById('messages').innerHTML+="\nhi"
             if (typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
                     let response = await DeviceMotionEvent.requestPermission();
                     if (response === 'granted') {
-           
+                        document.getElementById('messages').innerHTML+="\nPermission granted for Motion & Orientation APIs!";
                         startTracking();
                     } else {
-
+                        document.getElementById('messages').innerHTML+= "\nPermission denied";
                     }
                 } catch (e) {
- 
+                    document.getElementById('messages').innerHTML+= "\nError requesting permission";
                 }
             } else {
                 startTracking(); // Non-iOS devices don't require explicit permission
@@ -70,7 +73,7 @@
             window.addEventListener("deviceorientation", (event) => {
                 let heading = event.alpha; // Compass direction in degrees
                 let direction = getDirection(heading);
-
+                document.getElementById('messages').innerHTML+=`\nDirection:", ${direction}`;
             });
 
             // Detect steps (movement)
@@ -83,7 +86,7 @@
                 
                 if (Math.abs(acceleration - prevAcceleration) > 2) { // Threshold for step detection
                     stepCount++;
-    
+                    document.getElementById('messages').innerHTML+=`\n "Step detected! Total Steps:", ${stepCount}`
                     moveUser();
                 }
 
