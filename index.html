@@ -22,8 +22,8 @@
             background-color: blue;
             border-radius: 50%;
             position: absolute;
-            top: 100px;
-            left: 100px;
+            top: 100px; /* Initial Y position */
+            left: 100px; /* Initial X position */
             transition: all 0.2s ease-in-out;
         }
         #start-btn {
@@ -43,9 +43,14 @@
     <div id="messages"></div>
 
     <script>
-        let position = { x: 100, y: 100 }; // Initial user position
+        let position = { x: 100, y: 100 }; // Initial position
         const STEP_SIZE = 10; // Pixels per step
-        let currentHeading = 0; // Store the latest heading
+
+        let velocity = { x: 0, y: 0 }; // Velocity in x and y direction
+        let lastTimestamp = null;
+        let prevAcceleration = { x: 0, y: 0, z: 0 };
+        let gravity = { x: 0, y: 0, z: 0 };
+        let alpha = 0.8; // Filter strength
 
         document.getElementById("start-btn").addEventListener("click", requestPermissions);
 
@@ -57,50 +62,63 @@
                         startTracking();
                     }
                 } catch (e) {
-                    console.error("Permission request failed", e);
+                    console.error("Error requesting permission:", e);
                 }
             } else {
-                startTracking(); // For non-iOS devices
+                startTracking();
             }
         }
 
         function startTracking() {
-            // Listen for compass direction
             window.addEventListener("deviceorientation", (event) => {
-                currentHeading = event.alpha; // Store heading globally
+                handleOrientation(event);
             });
 
-            // Detect steps (movement)
-            let prevAcceleration = 0;
             window.addEventListener("devicemotion", (event) => {
-                let acc = event.acceleration;
-                let acceleration = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
-                document.getElementById('messages').innerHTML+= `<br> Accelration: ${acceleration}, PrevAcceleration: ${prevAcceleration}`
-                if (Math.abs(acceleration - prevAcceleration) > 2) { // Step detection threshold
-                    document.getElementById('messages').innerHTML+= `<br> Moving user`;
-                    moveUser(currentHeading);
-                }
-
-                prevAcceleration = acceleration;
+                handleMotion(event);
             });
         }
 
-        function getDirection(heading) {
-            if ((heading >= 315 && heading <= 360) || (heading >= 0 && heading < 45)) return "North";
-            if (heading >= 45 && heading < 135) return "East";
-            if (heading >= 135 && heading < 225) return "South";
-            if (heading >= 225 && heading < 315) return "West";
+        function handleOrientation(event) {
+            let heading = event.alpha; // Compass direction in degrees
+            document.getElementById('messages').innerHTML = `Heading: ${heading}`;
         }
 
-        function moveUser(heading) {
-            let direction = getDirection(heading);
+        function handleMotion(event) {
+            let acc = event.accelerationIncludingGravity;
+            let timestamp = event.timeStamp;
 
-            if (direction === "North") position.y -= STEP_SIZE;
-            if (direction === "South") position.y += STEP_SIZE;
-            if (direction === "East") position.x += STEP_SIZE;
-            if (direction === "West") position.x -= STEP_SIZE;
+            // High-pass filter to remove gravity
+            gravity.x = alpha * gravity.x + (1 - alpha) * acc.x;
+            gravity.y = alpha * gravity.y + (1 - alpha) * acc.y;
+            gravity.z = alpha * gravity.z + (1 - alpha) * acc.z;
 
-            document.getElementById('messages').innerHTML += `<br>Position: (${position.x}, ${position.y})`;
+            let realAccX = acc.x - gravity.x;
+            let realAccY = acc.y - gravity.y;
+
+            if (lastTimestamp) {
+                let deltaTime = (timestamp - lastTimestamp) / 1000; // Convert to seconds
+
+                // Integrate acceleration to get velocity
+                velocity.x += realAccX * deltaTime;
+                velocity.y += realAccY * deltaTime;
+
+                // Integrate velocity to get displacement
+                position.x += velocity.x * deltaTime * STEP_SIZE;
+                position.y += velocity.y * deltaTime * STEP_SIZE;
+
+                // Apply friction to prevent drift
+                velocity.x *= 0.9;
+                velocity.y *= 0.9;
+
+                moveUser();
+            }
+
+            lastTimestamp = timestamp;
+        }
+
+        function moveUser() {
+            document.getElementById('')
             document.getElementById("user-dot").style.transform = `translate(${position.x}px, ${position.y}px)`;
         }
     </script>
