@@ -22,8 +22,8 @@
             background-color: blue;
             border-radius: 50%;
             position: absolute;
-            top: 100px; /* Initial Y position */
-            left: 100px; /* Initial X position */
+            top: 100px;
+            left: 100px;
             transition: all 0.2s ease-in-out;
         }
         #start-btn {
@@ -40,55 +40,45 @@
     <div id="floor-map">
         <div id="user-dot"></div>
     </div>
-    <div id="messages">
-    </div>
+    <div id="messages"></div>
 
     <script>
-        let position = { x: 1, y: 1 }; // Initial user position (e.g., MR10)
-        const STEP_SIZE = 10; // Pixels per step
+        let position = { x: 100, y: 100 }; // Initial user position
+        const STEP_SIZE = 2; // Pixels per step
+        let currentHeading = 0; // Store the latest heading
 
         document.getElementById("start-btn").addEventListener("click", requestPermissions);
 
         async function requestPermissions() {
-
             if (typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
                     let response = await DeviceMotionEvent.requestPermission();
                     if (response === 'granted') {
-                        // document.getElementById('messages').innerHTML+="\nPermission granted for Motion & Orientation APIs!";
                         startTracking();
-                    } else {
-                        // document.getElementById('messages').innerHTML+= "\nPermission denied";
                     }
                 } catch (e) {
-                    // document.getElementById('messages').innerHTML+= "\nError requesting permission";
+                    console.error("Permission request failed", e);
                 }
             } else {
-                startTracking(); // Non-iOS devices don't require explicit permission
+                startTracking(); // For non-iOS devices
             }
         }
 
         function startTracking() {
-            // Detect direction (compass)
+            // Listen for compass direction
             window.addEventListener("deviceorientation", (event) => {
-                let heading = event.alpha; // Compass direction in degrees
-                let direction = getDirection(heading);
-                // document.getElementById('messages').innerHTML+=`\nDirection:", ${direction}`;
+                currentHeading = event.alpha; // Store heading globally
+                document.getElementById('messages').innerHTML += `<br>Direction: ${getDirection(currentHeading)}`;
             });
 
             // Detect steps (movement)
-            let stepCount = 0;
             let prevAcceleration = 0;
-
             window.addEventListener("devicemotion", (event) => {
-
                 let acc = event.accelerationIncludingGravity;
-                let acceleration = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-                
-                if (Math.abs(acceleration - prevAcceleration) > 2) { // Threshold for step detection
-                    stepCount++;
-                    document.getElementById('messages').innerHTML+=`\n "Step detected! Total Steps:", ${stepCount}`
-                    moveUser();
+                let acceleration = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+
+                if (Math.abs(acceleration - prevAcceleration) > 2) { // Step detection threshold
+                    moveUser(currentHeading);
                 }
 
                 prevAcceleration = acceleration;
@@ -96,26 +86,22 @@
         }
 
         function getDirection(heading) {
-            if ((heading >= 315 && heading <= 360) || (heading >= 0 && heading < 45)) {
-                return "North";
-            } else if (heading >= 45 && heading < 135) {
-                return "East";
-            } else if (heading >= 135 && heading < 225) {
-                return "South";
-            } else if (heading >= 225 && heading < 315) {
-                return "West";
-            }
+            if ((heading >= 315 && heading <= 360) || (heading >= 0 && heading < 45)) return "North";
+            if (heading >= 45 && heading < 135) return "East";
+            if (heading >= 135 && heading < 225) return "South";
+            if (heading >= 225 && heading < 315) return "West";
         }
 
-        function moveUser() {
-            let heading = event.alpha; // Get current heading
+        function moveUser(heading) {
             let direction = getDirection(heading);
-            document.getElementById('messages').innerHTML += `\n Direction : ${direction}`;
+            document.getElementById('messages').innerHTML += `<br> Moving: ${direction}`;
+
             if (direction === "North") position.y -= STEP_SIZE;
             if (direction === "South") position.y += STEP_SIZE;
             if (direction === "East") position.x += STEP_SIZE;
             if (direction === "West") position.x -= STEP_SIZE;
-            document.getElementById('messages').innerHTML += `\n position :  ${position.x} , ${position.y}`;
+
+            document.getElementById('messages').innerHTML += `<br>Position: (${position.x}, ${position.y})`;
             document.getElementById("user-dot").style.transform = `translate(${position.x}px, ${position.y}px)`;
         }
     </script>
