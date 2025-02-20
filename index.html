@@ -44,7 +44,7 @@
 
     <script>
         let position = { x: 100, y: 100 }; // Initial user position
-        const STEP_SIZE = 2; // Pixels per step
+        const STEP_SIZE = 10; // Pixels per step
         let currentHeading = 0; // Store the latest heading
 
         document.getElementById("start-btn").addEventListener("click", requestPermissions);
@@ -94,7 +94,6 @@
 
         function moveUser(heading) {
             let direction = getDirection(heading);
-            document.getElementById('messages').innerHTML += `<br> Moving: ${direction}`;
 
             if (direction === "North") position.y -= STEP_SIZE;
             if (direction === "South") position.y += STEP_SIZE;
