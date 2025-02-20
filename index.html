@@ -1,78 +1,111 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motion Tracking with Kalman Filter & Step Counter</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-        h1 { color: #333; }
-        p { font-size: 18px; }
-        #status { font-weight: bold; color: blue; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Motion Tracking with Kalman Filter & Step Counter</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+    h1 { color: #333; }
+    p { font-size: 18px; }
+    #status { font-weight: bold; color: blue; }
+  </style>
 </head>
 <body>
-    <h1>Motion & Direction Tracking</h1>
-    <p><strong>Acceleration (Filtered):</strong> <span id="acceleration">Waiting...</span></p>
-    <p><strong>Direction (Filtered):</strong> <span id="direction">Waiting...</span></p>
-    <p><strong>Estimated Position:</strong> X=<span id="posX">0</span>, Y=<span id="posY">0</span></p>
-    <p><strong>Steps Counted:</strong> <span id="steps">0</span></p>
-    <p id="status">Initializing sensors...</p>
-    <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
-    <script>
-        document.addEventListener("DOMContentLoaded", () => {
-            if (!window.DeviceMotionEvent || !window.DeviceOrientationEvent) {
-                document.getElementById("status").innerText = "Your device does not support motion tracking!";
-                return;
-            }
-            const kfAccel = new KalmanFilter();
-            const kfGyro = new KalmanFilter();
-            let userX = 0, userY = 0;
-            let speed = 0;
-            let heading = 0;
-            let lastAccX = 0, lastAccY = 0, lastAccZ = 0;
-            let alpha = 0.8;
-            let stepCount = 0;
-            let stepThreshold = 1.2;  // Adjust based on sensitivity
-            let lastStepTime = 0;
-            let stepLength = 0.7; // Approximate step length in meters
-            window.addEventListener("devicemotion", (event) => {
-                let rawAccX = event.accelerationIncludingGravity.x || 0;
-                let rawAccY = event.accelerationIncludingGravity.y || 0;
-                let rawAccZ = event.accelerationIncludingGravity.z || 0;
-                let accX = alpha * (lastAccX + rawAccX - lastAccX);
-                let accY = alpha * (lastAccY + rawAccY - lastAccY);
-                let accZ = alpha * (lastAccZ + rawAccZ - lastAccZ);
-                lastAccX = rawAccX;
-                lastAccY = rawAccY;
-                lastAccZ = rawAccZ;
-                accX = kfAccel.filter(accX);
-                accY = kfAccel.filter(accY);
-                let movement = Math.sqrt(accX * accX + accY * accY);
-                // :runner: Step detection based on peak acceleration
-                let currentTime = new Date().getTime();
-                if (movement > stepThreshold && (currentTime - lastStepTime) > 300) {
-                    stepCount++;
-                    lastStepTime = currentTime;
-                    // Move user position by step length in heading direction
-                    userX += stepLength * Math.cos(heading * (Math.PI / 180));
-                    userY += stepLength * Math.sin(heading * (Math.PI / 180));
-                    document.getElementById("steps").innerText = stepCount;
-                }
-                // Apply damping when stationary
-                if (movement < 0.1) {
-                    speed *= 0.9;
-                }
-                document.getElementById("acceleration").innerText = `X=${accX.toFixed(2)}, Y=${accY.toFixed(2)}`;
-                document.getElementById("posX").innerText = userX.toFixed(2);
-                document.getElementById("posY").innerText = userY.toFixed(2);
-            });
-            window.addEventListener("deviceorientation", (event) => {
-                heading = kfGyro.filter(event.alpha || 0);
-                document.getElementById("direction").innerText = `${heading.toFixed(2)}°`;
-            });
-            document.getElementById("status").innerText = "Sensors are active!";
-        });
-    </script>
+  <h1>Motion & Direction Tracking</h1>
+  <p><strong>Acceleration (Filtered):</strong> <span id="acceleration">Waiting...</span></p>
+  <p><strong>Direction (Filtered):</strong> <span id="direction">Waiting...</span></p>
+  <p><strong>Estimated Position:</strong> X=<span id="posX">0</span>, Y=<span id="posY">0</span></p>
+  <p><strong>Steps Counted:</strong> <span id="steps">0</span></p>
+  <p id="status">Initializing sensors...</p>
+
+  <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (!window.DeviceMotionEvent || !window.DeviceOrientationEvent) {
+        document.getElementById("status").innerText =
+          "Your device does not support motion tracking!";
+        return;
+      }
+
+      // We'll use Kalman filtering for the heading (orientation) only.
+      const kfGyro = new KalmanFilter();
+
+      // Position and step tracking variables
+      let userX = 0, userY = 0;
+      let heading = 0;
+      let stepCount = 0;
+      const stepLength = 0.7;           // Estimated step length in meters
+      const stepThresholdHigh = 1.2;    // Threshold to detect a step "peak"
+      const stepThresholdLow  = 0.8;    // Threshold to confirm the step "fall"
+      let lastStepTime = 0;
+      let stepDetected = false;         // Flag to indicate potential step
+
+      // For high-pass filtering: gravity vector (initially zero)
+      let gravityX = 0, gravityY = 0, gravityZ = 0;
+      const alpha = 0.8; // Smoothing factor for gravity estimation
+
+      window.addEventListener("devicemotion", (event) => {
+        // Get raw acceleration including gravity
+        const rawAccX = event.accelerationIncludingGravity.x || 0;
+        const rawAccY = event.accelerationIncludingGravity.y || 0;
+        const rawAccZ = event.accelerationIncludingGravity.z || 0;
+
+        // Estimate gravity using a low-pass filter
+        gravityX = alpha * gravityX + (1 - alpha) * rawAccX;
+        gravityY = alpha * gravityY + (1 - alpha) * rawAccY;
+        gravityZ = alpha * gravityZ + (1 - alpha) * rawAccZ;
+
+        // Remove gravity component to get linear acceleration
+        const linearAccX = rawAccX - gravityX;
+        const linearAccY = rawAccY - gravityY;
+        const linearAccZ = rawAccZ - gravityZ;
+
+        // Combine all three axes to get an overall acceleration magnitude.
+        // (You might also use just one axis if your phone orientation is fixed.)
+        const movement = Math.sqrt(
+          linearAccX * linearAccX +
+          linearAccY * linearAccY +
+          linearAccZ * linearAccZ
+        );
+
+        const currentTime = new Date().getTime();
+
+        // Use a debounce period (300ms) to avoid counting multiple steps too fast.
+        if (currentTime - lastStepTime > 300) {
+          // Start detecting a step if the movement exceeds the high threshold
+          if (!stepDetected && movement > stepThresholdHigh) {
+            stepDetected = true;
+          }
+          // Confirm the step once the movement falls below the low threshold
+          else if (stepDetected && movement < stepThresholdLow) {
+            stepCount++;
+            lastStepTime = currentTime;
+            stepDetected = false;
+
+            // Update position based on current heading and estimated step length
+            userX += stepLength * Math.cos(heading * (Math.PI / 180));
+            userY += stepLength * Math.sin(heading * (Math.PI / 180));
+
+            document.getElementById("steps").innerText = stepCount;
+          }
+        }
+
+        // Display the filtered (linear) acceleration values for debugging
+        document.getElementById("acceleration").innerText =
+          `X=${linearAccX.toFixed(2)}, Y=${linearAccY.toFixed(2)}, Z=${linearAccZ.toFixed(2)}`;
+        document.getElementById("posX").innerText = userX.toFixed(2);
+        document.getElementById("posY").innerText = userY.toFixed(2);
+      });
+
+      // Update heading using device orientation events with Kalman filtering for smoothness
+      window.addEventListener("deviceorientation", (event) => {
+        heading = kfGyro.filter(event.alpha || 0);
+        document.getElementById("direction").innerText = `${heading.toFixed(2)}°`;
+      });
+
+      document.getElementById("status").innerText = "Sensors are active!";
+    });
+  </script>
 </body>
 </html>
