@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Motion, Step Counter & Trajectory Visualization</title>
+  <title>Optimized Motion & Step Tracker</title>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
     h1 { color: #333; }
@@ -14,80 +14,52 @@
   </style>
 </head>
 <body>
-  <h1>Motion, Step Counter, and Trajectory Tracking</h1>
-  <p><strong>Acceleration (Filtered):</strong> <span id="acceleration">Waiting...</span></p>
-  <p><strong>Direction (Filtered):</strong> <span id="direction">Waiting...</span></p>
+  <h1>Optimized Motion & Step Tracking</h1>
+  <p><strong>Filtered Acceleration:</strong> <span id="acceleration">Waiting...</span></p>
+  <p><strong>Direction:</strong> <span id="direction">Waiting...</span></p>
   <p><strong>Estimated Position:</strong> X=<span id="posX">0</span>, Y=<span id="posY">0</span></p>
   <p><strong>Steps Counted:</strong> <span id="steps">0</span></p>
   <p id="status">Initializing sensors...</p>
   <button id="reset">Recalibrate Position</button>
   <canvas id="trajectoryCanvas" width="500" height="500"></canvas>
 
-  <!-- Kalman filter library for smoothing orientation -->
   <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       if (!window.DeviceMotionEvent || !window.DeviceOrientationEvent) {
-        document.getElementById("status").innerText =
-          "Your device does not support motion tracking!";
+        document.getElementById("status").innerText = "Your device does not support motion tracking!";
         return;
       }
 
-      // Kalman filter for smoothing the heading
-      const kfGyro = new KalmanFilter();
-
-      // Position and step tracking (units in meters)
-      let userX = 0, userY = 0;
-      let heading = 0;
-      let stepCount = 0;
-      const stepLength = 0.7;  // Estimated step length in meters
-      const stepThreshold = 1.5;  // Adjusted threshold for step detection
+      const kfX = new KalmanFilter(), kfY = new KalmanFilter(), kfGyro = new KalmanFilter();
+      let userX = 0, userY = 0, heading = 0, stepCount = 0;
+      const stepLength = 0.7, stepThreshold = 1.8, minStepInterval = 400;
       let lastStepTime = 0;
-
-      // Trajectory storage (in meters)
-      let trajectoryPoints = [{ x: 0, y: 0 }];
-      const toleranceThreshold = 0.05; // Distance tolerance for considering overlapping points (in meters)
-
-      // Gravity estimation variables (for high-pass filtering)
       let gravityX = 0, gravityY = 0, gravityZ = 0;
-      const alpha = 0.9; // Smoothing factor for gravity estimation
+      const alpha = 0.9;
+      const trajectoryPoints = [{ x: 0, y: 0 }];
 
-      // Setup the canvas for drawing the trajectory.
       const canvas = document.getElementById("trajectoryCanvas");
       const ctx = canvas.getContext("2d");
-      const scale = 50; // 50 pixels per meter
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
-
-      // Draw the trajectory (clear and redraw all points and connecting lines)
+      const scale = 50, centerX = canvas.width / 2, centerY = canvas.height / 2;
       function drawTrajectory() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
         ctx.strokeStyle = "#ccc";
-        ctx.moveTo(centerX, 0);
-        ctx.lineTo(centerX, canvas.height);
-        ctx.moveTo(0, centerY);
-        ctx.lineTo(canvas.width, centerY);
+        ctx.beginPath();
+        ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height);
+        ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY);
         ctx.stroke();
 
-        // Draw the connecting path in red
-        ctx.beginPath();
         ctx.strokeStyle = "red";
+        ctx.beginPath();
         trajectoryPoints.forEach((pt, index) => {
-          let px = centerX + pt.x * scale;
-          let py = centerY - pt.y * scale; // invert Y (canvas Y grows downward)
-          if (index === 0) {
-            ctx.moveTo(px, py);
-          } else {
-            ctx.lineTo(px, py);
-          }
+          let px = centerX + pt.x * scale, py = centerY - pt.y * scale;
+          index === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         });
         ctx.stroke();
 
-        // Draw a small blue dot at each trajectory point
         trajectoryPoints.forEach((pt) => {
-          let px = centerX + pt.x * scale;
-          let py = centerY - pt.y * scale;
+          let px = centerX + pt.x * scale, py = centerY - pt.y * scale;
           ctx.beginPath();
           ctx.arc(px, py, 3, 0, 2 * Math.PI);
           ctx.fillStyle = "blue";
@@ -95,78 +67,53 @@
         });
       }
 
-      // Check if the new position is close to the last one
-      function isCloseEnough(x1, y1, x2, y2) {
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        return Math.sqrt(dx * dx + dy * dy) < toleranceThreshold;
+      function isValidStep(x1, y1, x2, y2) {
+        return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) > 0.05;
       }
 
-      // Step detection
       window.addEventListener("devicemotion", (event) => {
-        const rawAccX = event.accelerationIncludingGravity.x || 0;
-        const rawAccY = event.accelerationIncludingGravity.y || 0;
-        const rawAccZ = event.accelerationIncludingGravity.z || 0;
+        const accX = event.accelerationIncludingGravity.x || 0;
+        const accY = event.accelerationIncludingGravity.y || 0;
+        const accZ = event.accelerationIncludingGravity.z || 0;
+        gravityX = alpha * gravityX + (1 - alpha) * accX;
+        gravityY = alpha * gravityY + (1 - alpha) * accY;
+        gravityZ = alpha * gravityZ + (1 - alpha) * accZ;
 
-        // Estimate gravity using a low-pass filter
-        gravityX = alpha * gravityX + (1 - alpha) * rawAccX;
-        gravityY = alpha * gravityY + (1 - alpha) * rawAccY;
-        gravityZ = alpha * gravityZ + (1 - alpha) * rawAccZ;
+        const linearAccX = kfX.filter(accX - gravityX);
+        const linearAccY = kfY.filter(accY - gravityY);
+        const movement = Math.sqrt(linearAccX ** 2 + linearAccY ** 2);
+        const currentTime = Date.now();
 
-        // Calculate linear acceleration by removing gravity
-        const linearAccX = rawAccX - gravityX;
-        const linearAccY = rawAccY - gravityY;
-        const linearAccZ = rawAccZ - gravityZ;
-
-        // Overall magnitude of linear acceleration
-        const movement = Math.sqrt(
-          linearAccX * linearAccX +
-          linearAccY * linearAccY +
-          linearAccZ * linearAccZ
-        );
-
-        const currentTime = new Date().getTime();
-
-        // Step detection logic with debounce (300ms)
-        if (movement > stepThreshold && currentTime - lastStepTime > 300) {
+        if (movement > stepThreshold && currentTime - lastStepTime > minStepInterval) {
           stepCount++;
           lastStepTime = currentTime;
-
-          // Update estimated position using heading and step length
           const adjustedHeading = heading - (screen.orientation.angle || 0);
           userX += stepLength * Math.cos(adjustedHeading * (Math.PI / 180));
           userY += stepLength * Math.sin(adjustedHeading * (Math.PI / 180));
 
-          // Check if the new point is close enough to the last one
           const lastPoint = trajectoryPoints[trajectoryPoints.length - 1];
-          if (!isCloseEnough(lastPoint.x, lastPoint.y, userX, userY)) {
-            // Save this new position in the trajectory and redraw
+          if (isValidStep(lastPoint.x, lastPoint.y, userX, userY)) {
             trajectoryPoints.push({ x: userX, y: userY });
             drawTrajectory();
           }
 
-          // Update displayed step count and position
           document.getElementById("steps").innerText = stepCount;
           document.getElementById("posX").innerText = userX.toFixed(2);
           document.getElementById("posY").innerText = userY.toFixed(2);
         }
 
-        document.getElementById("acceleration").innerText =
-          `X=${linearAccX.toFixed(2)}, Y=${linearAccY.toFixed(2)}, Z=${linearAccZ.toFixed(2)}`;
+        document.getElementById("acceleration").innerText = `X=${linearAccX.toFixed(2)}, Y=${linearAccY.toFixed(2)}`;
       });
 
-      // Orientation tracking
       window.addEventListener("deviceorientation", (event) => {
         heading = kfGyro.filter(event.alpha || 0);
         document.getElementById("direction").innerText = `${heading.toFixed(2)}°`;
       });
 
-      // Reset tracking
       document.getElementById("reset").addEventListener("click", () => {
-        userX = 0;
-        userY = 0;
-        stepCount = 0;
-        trajectoryPoints = [{ x: 0, y: 0 }];
+        userX = 0; userY = 0; stepCount = 0;
+        trajectoryPoints.length = 0;
+        trajectoryPoints.push({ x: 0, y: 0 });
         drawTrajectory();
         document.getElementById("steps").innerText = "0";
         document.getElementById("posX").innerText = "0";
