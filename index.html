@@ -3,125 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Location Tracking</title>
+    <title>Motion Tracking with Kalman Filter</title>
     <style>
-        body {
-            text-align: center;
-        }
-        #floor-map {
-            width: 90%;
-            height: 400px;
-            background-color: lightgray;
-            position: relative;
-            margin: 20px auto;
-            overflow: hidden;
-        }
-        #user-dot {
-            width: 20px;
-            height: 20px;
-            background-color: blue;
-            border-radius: 50%;
-            position: absolute;
-            top: 100px; /* Initial Y position */
-            left: 100px; /* Initial X position */
-            transition: all 0.2s ease-in-out;
-        }
-        #start-btn {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        h1 { color: #333; }
+        p { font-size: 18px; }
+        #status { font-weight: bold; color: blue; }
     </style>
 </head>
 <body>
+    <h1>Motion & Direction Tracking</h1>
+    <p><strong>Acceleration (Filtered):</strong> <span id="acceleration">Waiting...</span></p>
+    <p><strong>Direction (Filtered):</strong> <span id="direction">Waiting...</span></p>
+    <p><strong>Estimated Position:</strong> X=<span id="posX">0</span>, Y=<span id="posY">0</span></p>
+    <p id="status">Initializing sensors...</p>
 
-    <h2>Live Location Tracking on Floor Map</h2>
-    <button id="start-btn">Start Tracking</button>
-    <div id="floor-map">
-        <div id="user-dot"></div>
-    </div>
-    <div id="messages"></div>
-
+    <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
     <script>
-        let position = { x: 100, y: 100 }; // Initial position
-        const STEP_SIZE = 10; // Pixels per step
-
-        let velocity = { x: 0, y: 0 }; // Velocity in x and y direction
-        let lastTimestamp = null;
-        let prevAcceleration = { x: 0, y: 0, z: 0 };
-        let gravity = { x: 0, y: 0, z: 0 };
-        let alpha = 0.8; // Filter strength
-
-        document.getElementById("start-btn").addEventListener("click", requestPermissions);
-
-        async function requestPermissions() {
-            if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                try {
-                    let response = await DeviceMotionEvent.requestPermission();
-                    if (response === 'granted') {
-                        startTracking();
-                    }
-                } catch (e) {
-                    console.error("Error requesting permission:", e);
-                }
-            } else {
-                startTracking();
+        document.addEventListener("DOMContentLoaded", () => {
+            if (!window.DeviceMotionEvent || !window.DeviceOrientationEvent) {
+                document.getElementById("status").innerText = "Your device does not support motion tracking!";
+                return;
             }
-        }
 
-        function startTracking() {
-            window.addEventListener("deviceorientation", (event) => {
-                handleOrientation(event);
-            });
+            const kfAccel = new KalmanFilter();
+            const kfGyro = new KalmanFilter();
 
+            let userX = 0, userY = 0;  // Initial position
+            let speed = 0;  // Estimated speed
+            let heading = 0;  // User's direction
+
+            // Handle motion (acceleration-based movement)
             window.addEventListener("devicemotion", (event) => {
-                handleMotion(event);
+                let accX = kfAccel.filter(event.accelerationIncludingGravity.x || 0);
+                let accY = kfAccel.filter(event.accelerationIncludingGravity.y || 0);
+
+                let movement = Math.sqrt(accX * accX + accY * accY);
+                if (movement > 0.1) { // Threshold to avoid false movement
+                    speed += movement * 0.05; // Scale factor for smoother updates
+                    userX += speed * Math.cos(heading * (Math.PI / 180));
+                    userY += speed * Math.sin(heading * (Math.PI / 180));
+                }
+
+                document.getElementById("acceleration").innerText = `X=${accX.toFixed(2)}, Y=${accY.toFixed(2)}`;
+                document.getElementById("posX").innerText = userX.toFixed(2);
+                document.getElementById("posY").innerText = userY.toFixed(2);
             });
-        }
 
-        function handleOrientation(event) {
-            let heading = event.alpha; // Compass direction in degrees
-            document.getElementById('messages').innerHTML = `Heading: ${heading}`;
-        }
+            // Handle orientation (compass direction)
+            window.addEventListener("deviceorientation", (event) => {
+                heading = kfGyro.filter(event.alpha || 0);
+                document.getElementById("direction").innerText = `${heading.toFixed(2)}°`;
+            });
 
-        function handleMotion(event) {
-            let acc = event.accelerationIncludingGravity;
-            let timestamp = event.timeStamp;
-
-            // High-pass filter to remove gravity
-            gravity.x = alpha * gravity.x + (1 - alpha) * acc.x;
-            gravity.y = alpha * gravity.y + (1 - alpha) * acc.y;
-            gravity.z = alpha * gravity.z + (1 - alpha) * acc.z;
-
-            let realAccX = acc.x - gravity.x;
-            let realAccY = acc.y - gravity.y;
-
-            if (lastTimestamp) {
-                let deltaTime = (timestamp - lastTimestamp) / 1000; // Convert to seconds
-
-                // Integrate acceleration to get velocity
-                velocity.x += realAccX * deltaTime;
-                velocity.y += realAccY * deltaTime;
-
-                // Integrate velocity to get displacement
-                position.x += velocity.x * deltaTime * STEP_SIZE;
-                position.y += velocity.y * deltaTime * STEP_SIZE;
-
-                // Apply friction to prevent drift
-                velocity.x *= 0.9;
-                velocity.y *= 0.9;
-
-                moveUser();
-            }
-
-            lastTimestamp = timestamp;
-        }
-
-        function moveUser() {
-            document.getElementById('messages').innerHTML += `Position: ${position.x}, ${position.y}`;
-            document.getElementById("user-dot").style.transform = `translate(${position.x}px, ${position.y}px)`;
-        }
+            document.getElementById("status").innerText = "Sensors are active!";
+        });
     </script>
-
 </body>
 </html>
