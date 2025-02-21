@@ -10,6 +10,9 @@
         font-family: Arial, sans-serif;
         text-align: center;
         background: #fbd551;
+        /* font-size: 48px; */
+        /* color: #fbd551; */
+        /* text-shadow: 3px 3px 5px #e92429; */
         /* background-color: #fbd551; */
       }
       h1 {
@@ -24,9 +27,9 @@
         font-size: 0.9em;
       }
       #floorCanvas {
-        background: #fbd551;
+        background: #333333;
         cursor: crosshair;
-        border: 1px solid #aaa;
+        border: 2px 1px solid #aaa;
       }
       #stats {
         margin: 0.5em 0;
@@ -55,7 +58,6 @@
   <body>
     <div class="heading-section">
       <h1>Floor Plan Live Tracking</h1>
-
       <!-- New Location Selector -->
       <div id="locationSelect">
         <label for="locationInput">Select Starting Location:</label>
@@ -74,17 +76,14 @@
       </div>
       <button id="setLocationBtn">Set Location</button>
     </div>
-
     <div id="info">
       1) Click on the floor plan to set your <strong>starting position</strong>.<br />
       2) Your navigation icon (SVG) stays fixed while the map rotates based on your device's
       heading.<br />
       3) Steps move you forward along the direction of the arrow.
     </div>
-
     <!-- Canvas for floor plan and live drawing -->
     <canvas id="floorCanvas" width="900" height="1200"></canvas>
-
     <!-- Stats & Controls -->
     <div id="stats">
       <p><strong>Steps:</strong> <span id="stepsCount">0</span></p>
@@ -106,17 +105,14 @@
       <button id="zoomOutBtn">Zoom Out</button>
       <div id="status">Waiting for sensor data...</div>
     </div>
-
     <!-- Kalman filter library for smoothing orientation -->
     <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
     <script>
       // Global zoom factor
       let zoomFactor = 1.0;
-
       // Global navigation icon (SVG)
       const navIcon = new Image();
       navIcon.src = 'hack5.svg'; // Replace with your SVG file path
-
       // Request motion permission (for iOS)
       function requestMotionPermission() {
         if (typeof DeviceMotionEvent.requestPermission === 'function') {
@@ -136,7 +132,6 @@
           document.getElementById('status').innerText = 'Motion sensors active!';
         }
       }
-
       // Try auto-request on load
       window.onload = function () {
         if (typeof DeviceMotionEvent.requestPermission === 'function') {
@@ -148,7 +143,6 @@
           requestMotionPermission();
         }
       };
-
       /********************************************************
        * 1) LOAD THE FLOOR PLAN IMAGE INTO THE CANVAS
        ********************************************************/
@@ -160,7 +154,6 @@
       function drawFloorPlan() {
         ctx.drawImage(floorPlan, 0, 0, canvas.width, canvas.height);
       }
-
       /********************************************************
        * 2) GLOBAL VARIABLES
        ********************************************************/
@@ -185,20 +178,17 @@
       let motionBuffer = [];
       let isStationary = true;
       const stationaryStdDevThreshold = 0.3;
-
       function computeStdDev(arr) {
         if (!arr.length) return 0;
         const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
         const variance = arr.reduce((sum, val) => sum + (val - mean) ** 2, 0) / arr.length;
         return Math.sqrt(variance);
       }
-
       /********************************************************
        * 3) DRAWING FUNCTIONS
        ********************************************************/
       function drawEverything() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
         if (userX !== null && userY !== null) {
           ctx.save();
           ctx.translate(canvas.width / 2, canvas.height / 2);
@@ -224,7 +214,6 @@
         // Draw the navigation icon (SVG) at the canvas center.
         drawNavigationIcon();
       }
-
       // Draw the navigation icon using the loaded SVG.
       function drawNavigationIcon() {
         const centerX = canvas.width / 2;
@@ -240,7 +229,6 @@
           iconHeight,
         );
       }
-
       /********************************************************
        * 4) HARD CODED LOCATION CONFIG & LOCATION SELECT EVENT
        ********************************************************/
@@ -249,7 +237,6 @@
         476: { x: 278, y: 997 },
         477: { x: 298, y: 997 },
       };
-
       document.getElementById('setLocationBtn').addEventListener('click', function () {
         const selectedValue = document.getElementById('locationInput').value;
         if (locationConfig.hasOwnProperty(selectedValue)) {
@@ -266,7 +253,6 @@
           alert('Location not found. Please select a valid seat number.');
         }
       });
-
       /********************************************************
        * 5) ZOOM CONTROLS
        ********************************************************/
@@ -274,19 +260,16 @@
         zoomFactor *= 1.1;
         drawEverything();
       });
-
       document.getElementById('zoomOutBtn').addEventListener('click', function () {
         zoomFactor /= 1.1;
         drawEverything();
       });
-
       /********************************************************
        * 6) EVENT LISTENERS
        ********************************************************/
       floorPlan.onload = function () {
         drawEverything();
       };
-
       canvas.addEventListener('click', (e) => {
         const rect = canvas.getBoundingClientRect();
         userX = e.clientX - rect.left;
@@ -295,14 +278,12 @@
         stepCount = 0;
         drawEverything();
       });
-
       window.addEventListener('deviceorientation', (event) => {
         const rawHeading = event.alpha || 0;
         heading = headingKF.filter(rawHeading);
         document.getElementById('headingDeg').innerText = heading.toFixed(2);
         drawEverything();
       });
-
       window.addEventListener('devicemotion', (event) => {
         if (userX === null || userY === null) return;
         const rawX = event.accelerationIncludingGravity.x || 0;
@@ -346,7 +327,6 @@
           : 'Moving...';
         drawEverything();
       });
-
       document.getElementById('resetBtn').addEventListener('click', () => {
         userX = null;
         userY = null;
@@ -361,7 +341,6 @@
         document.getElementById('offsetY').innerText = '0';
         drawEverything();
       });
-
       document.getElementById('status').innerText = 'Waiting for sensor data...';
     </script>
   </body>
