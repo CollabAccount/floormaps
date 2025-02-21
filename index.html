@@ -1,181 +1,339 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Motion, Step Counter & Trajectory Visualization</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-    h1 { color: #333; }
-    p { font-size: 18px; }
-    #status { font-weight: bold; color: blue; }
-    #trajectoryCanvas { border: 1px solid #000; margin-top: 20px; }
-    button { margin-top: 10px; padding: 8px 16px; font-size: 16px; }
-  </style>
-</head>
-<body>
-  <h1>Motion, Step Counter, and Trajectory Tracking</h1>
-  <p><strong>Acceleration (Filtered):</strong> <span id="acceleration">Waiting...</span></p>
-  <p><strong>Direction (Filtered):</strong> <span id="direction">Waiting...</span></p>
-  <p><strong>Estimated Position:</strong> X=<span id="posX">0</span>, Y=<span id="posY">0</span></p>
-  <p><strong>Steps Counted:</strong> <span id="steps">0</span></p>
-  <p id="status">Initializing sensors...</p>
-  <button id="reset">Recalibrate Position</button>
-  <canvas id="trajectoryCanvas" width="500" height="500"></canvas>
-
-  <!-- Kalman filter library for smoothing orientation -->
-  <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      if (!window.DeviceMotionEvent || !window.DeviceOrientationEvent) {
-        document.getElementById("status").innerText =
-          "Your device does not support motion tracking!";
-        return;
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Floor Plan Live Tracking (Auto-Rotating Map)</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background: #f0f0f0;
       }
-
-      // Kalman filter for smoothing the heading
-      const kfGyro = new KalmanFilter();
-
-      // Position and step tracking (units in meters)
-      let userX = 0, userY = 0;
-      let heading = 0;
-      let stepCount = 0;
-      const stepLength = 0.7;  // Estimated step length in meters
-      const stepThreshold = 1.5;  // Adjusted threshold for step detection
-      let lastStepTime = 0;
-
-      // Trajectory storage (in meters)
-      let trajectoryPoints = [{ x: 0, y: 0 }];
-      const toleranceThreshold = 0.05; // Distance tolerance for considering overlapping points (in meters)
-
-      // Gravity estimation variables (for high-pass filtering)
-      let gravityX = 0, gravityY = 0, gravityZ = 0;
-      const alpha = 0.9; // Smoothing factor for gravity estimation
-
-      // Setup the canvas for drawing the trajectory.
-      const canvas = document.getElementById("trajectoryCanvas");
-      const ctx = canvas.getContext("2d");
-      const scale = 50; // 50 pixels per meter
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
-
-      // Draw the trajectory (clear and redraw all points and connecting lines)
-      function drawTrajectory() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
-        ctx.strokeStyle = "#ccc";
-        ctx.moveTo(centerX, 0);
-        ctx.lineTo(centerX, canvas.height);
-        ctx.moveTo(0, centerY);
-        ctx.lineTo(canvas.width, centerY);
-        ctx.stroke();
-
-        // Draw the connecting path in red
-        ctx.beginPath();
-        ctx.strokeStyle = "red";
-        trajectoryPoints.forEach((pt, index) => {
-          let px = centerX + pt.x * scale;
-          let py = centerY - pt.y * scale; // invert Y (canvas Y grows downward)
-          if (index === 0) {
-            ctx.moveTo(px, py);
-          } else {
-            ctx.lineTo(px, py);
-          }
-        });
-        ctx.stroke();
-
-        // Draw a small blue dot at each trajectory point
-        trajectoryPoints.forEach((pt) => {
-          let px = centerX + pt.x * scale;
-          let py = centerY - pt.y * scale;
-          ctx.beginPath();
-          ctx.arc(px, py, 3, 0, 2 * Math.PI);
-          ctx.fillStyle = "blue";
-          ctx.fill();
-        });
+      h1 {
+        margin: 0.5em 0 0.2em;
       }
-
-      // Check if the new position is close to the last one
-      function isCloseEnough(x1, y1, x2, y2) {
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        return Math.sqrt(dx * dx + dy * dy) < toleranceThreshold;
+      #locationSelect {
+        margin: 0.5em 0;
+        font-size: 1em;
       }
+      #info {
+        margin-bottom: 0.5em;
+        font-size: 0.9em;
+      }
+      #floorCanvas {
+        background: #fff;
+        cursor: crosshair;
+        border: 1px solid #aaa;
+      }
+      #stats {
+        margin: 0.5em 0;
+        font-size: 1em;
+      }
+      button {
+        margin: 0.5em;
+        padding: 0.5em 1em;
+        font-size: 1em;
+        cursor: pointer;
+      }
+      #status {
+        font-weight: bold;
+        color: blue;
+        margin-top: 0.5em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Floor Plan Live Tracking</h1>
 
-      // Step detection
-      window.addEventListener("devicemotion", (event) => {
-        const rawAccX = event.accelerationIncludingGravity.x || 0;
-        const rawAccY = event.accelerationIncludingGravity.y || 0;
-        const rawAccZ = event.accelerationIncludingGravity.z || 0;
+    <!-- New Location Selector -->
+    <div id="locationSelect">
+      <label for="locationInput">Select Starting Location:</label>
+      <input id="locationInput" type="text" list="locationOptions" placeholder="Type seat number..." />
+      <datalist id="locationOptions">
+        <option value="477"></option>
+        <option value="478"></option>
+        <option value="479"></option>
+        <!-- Add more options as needed -->
+      </datalist>
+      <button id="setLocationBtn">Set Location</button>
+    </div>
 
-        // Estimate gravity using a low-pass filter
-        gravityX = alpha * gravityX + (1 - alpha) * rawAccX;
-        gravityY = alpha * gravityY + (1 - alpha) * rawAccY;
-        gravityZ = alpha * gravityZ + (1 - alpha) * rawAccZ;
+    <div id="info">
+      1) Click on the floor plan to set your <strong>starting position</strong>.<br />
+      2) Your navigation icon (SVG) stays fixed while the map rotates based on your device's heading.<br />
+      3) Steps move you forward along the direction of the arrow.
+    </div>
 
-        // Calculate linear acceleration by removing gravity
-        const linearAccX = rawAccX - gravityX;
-        const linearAccY = rawAccY - gravityY;
-        const linearAccZ = rawAccZ - gravityZ;
+    <!-- Canvas for floor plan and live drawing -->
+    <canvas id="floorCanvas" width="900" height="1200"></canvas>
 
-        // Overall magnitude of linear acceleration
-        const movement = Math.sqrt(
-          linearAccX * linearAccX +
-          linearAccY * linearAccY +
-          linearAccZ * linearAccZ
-        );
+    <!-- Stats & Controls -->
+    <div id="stats">
+      <p><strong>Steps:</strong> <span id="stepsCount">0</span></p>
+      <p><strong>Sensor Heading:</strong> <span id="headingDeg">0</span>°</p>
+      <p>
+        <strong>User Offset (World coords):</strong> X=<span id="offsetX">0</span>,
+        Y=<span id="offsetY">0</span>
+      </p>
+      <p>
+        <strong>Acceleration (Filtered):</strong> X=<span id="accX">0</span>,
+        Y=<span id="accY">0</span>, Z=<span id="accZ">0</span>
+      </p>
+      <button id="resetBtn">Reset</button>
+      <!-- Zoom controls -->
+      <button id="zoomInBtn">Zoom In</button>
+      <button id="zoomOutBtn">Zoom Out</button>
+      <div id="status">Waiting for sensor data...</div>
+    </div>
 
-        const currentTime = new Date().getTime();
+    <!-- Kalman filter library for smoothing orientation -->
+    <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
+    <script>
+      // Global zoom factor
+      let zoomFactor = 1.0;
 
-        // Step detection logic with debounce (300ms)
-        if (movement > stepThreshold && currentTime - lastStepTime > 300) {
-          stepCount++;
-          lastStepTime = currentTime;
+      // Global navigation icon (SVG)
+      const navIcon = new Image();
+      navIcon.src = 'hack5.svg'; // Replace with your SVG file path
 
-          // Update estimated position using heading and step length
-          const adjustedHeading = heading - (screen.orientation.angle || 0);
-          userX += stepLength * Math.cos(adjustedHeading * (Math.PI / 180));
-          userY += stepLength * Math.sin(adjustedHeading * (Math.PI / 180));
-
-          // Check if the new point is close enough to the last one
-          const lastPoint = trajectoryPoints[trajectoryPoints.length - 1];
-          if (!isCloseEnough(lastPoint.x, lastPoint.y, userX, userY)) {
-            // Save this new position in the trajectory and redraw
-            trajectoryPoints.push({ x: userX, y: userY });
-            drawTrajectory();
-          }
-
-          // Update displayed step count and position
-          document.getElementById("steps").innerText = stepCount;
-          document.getElementById("posX").innerText = userX.toFixed(2);
-          document.getElementById("posY").innerText = userY.toFixed(2);
+      // Request motion permission (for iOS)
+      function requestMotionPermission() {
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+          DeviceMotionEvent.requestPermission()
+            .then((permissionState) => {
+              if (permissionState === 'granted') {
+                document.getElementById('status').innerText = 'Motion sensors enabled!';
+              } else {
+                document.getElementById('status').innerText = 'Permission denied.';
+              }
+            })
+            .catch((error) => {
+              document.getElementById('status').innerText = 'Error: ' + error;
+            });
+        } else {
+          // Non-iOS devices don't require permission
+          document.getElementById('status').innerText = 'Motion sensors active!';
         }
+      }
 
-        document.getElementById("acceleration").innerText =
-          `X=${linearAccX.toFixed(2)}, Y=${linearAccY.toFixed(2)}, Z=${linearAccZ.toFixed(2)}`;
+      // Try auto-request on load
+      window.onload = function () {
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+          let btn = document.createElement('button');
+          btn.innerText = 'Enable Motion Sensors';
+          btn.onclick = requestMotionPermission;
+          document.body.appendChild(btn);
+        } else {
+          requestMotionPermission();
+        }
+      };
+
+      /********************************************************
+       * 1) LOAD THE FLOOR PLAN IMAGE INTO THE CANVAS
+       ********************************************************/
+      const canvas = document.getElementById('floorCanvas');
+      const ctx = canvas.getContext('2d');
+      const floorPlanSrc = 'image.png'; // Replace with your floor plan image path.
+      const floorPlan = new Image();
+      floorPlan.src = floorPlanSrc;
+      function drawFloorPlan() {
+        ctx.drawImage(floorPlan, 0, 0, canvas.width, canvas.height);
+      }
+
+      /********************************************************
+       * 2) GLOBAL VARIABLES
+       ********************************************************/
+      let heading = 0;
+      const headingKF = new KalmanFilter({ R: 0.01, Q: 3 });
+      let userX = null;
+      let userY = null;
+      let trajectoryPoints = [];
+      let stepCount = 0;
+      const stepLengthMeters = 0.7;
+      const pixelsPerMeter = 22;
+      let stepThresholdHigh = 2.0;
+      let stepThresholdLow = 1.0;
+      let peakDetected = false;
+      let lastPeakTime = 0;
+      let minStepInterval = 500;
+      let gravityX = 0, gravityY = 0, gravityZ = 0;
+      const alpha = 0.9;
+      const motionBufferSize = 20;
+      let motionBuffer = [];
+      let isStationary = true;
+      const stationaryStdDevThreshold = 0.3;
+
+      function computeStdDev(arr) {
+        if (!arr.length) return 0;
+        const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+        const variance = arr.reduce((sum, val) => sum + (val - mean) ** 2, 0) / arr.length;
+        return Math.sqrt(variance);
+      }
+
+      /********************************************************
+       * 3) DRAWING FUNCTIONS
+       ********************************************************/
+      function drawEverything() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (userX !== null && userY !== null) {
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.scale(zoomFactor, zoomFactor);
+          let rotationAngle = ((heading - 120) * Math.PI) / 180;
+          ctx.rotate(rotationAngle);
+          ctx.translate(-userX, -userY);
+          drawFloorPlan();
+          if (trajectoryPoints.length > 1) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            trajectoryPoints.forEach((pt, idx) => {
+              if (idx === 0) ctx.moveTo(pt.x, pt.y);
+              else ctx.lineTo(pt.x, pt.y);
+            });
+            ctx.stroke();
+          }
+          ctx.restore();
+        } else {
+          drawFloorPlan();
+        }
+        // Draw the navigation icon (SVG) at the canvas center.
+        drawNavigationIcon();
+      }
+
+      // Draw the navigation icon using the loaded SVG.
+      function drawNavigationIcon() {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        // Define desired icon size (adjust as needed)
+        const iconWidth = 60;
+        const iconHeight = 60;
+        ctx.drawImage(navIcon, centerX - iconWidth / 2, centerY - iconHeight / 2, iconWidth, iconHeight);
+      }
+
+      /********************************************************
+       * 4) HARD CODED LOCATION CONFIG & LOCATION SELECT EVENT
+       ********************************************************/
+      const locationConfig = {
+        475: { x: 258, y: 997 },
+        476: { x: 278, y: 997 },
+        477: { x: 298, y: 997 }
+      };
+
+      document.getElementById('setLocationBtn').addEventListener('click', function () {
+        const selectedValue = document.getElementById('locationInput').value;
+        if (locationConfig.hasOwnProperty(selectedValue)) {
+          userX = locationConfig[selectedValue].x;
+          userY = locationConfig[selectedValue].y;
+          trajectoryPoints = [];
+          stepCount = 0;
+          document.getElementById('stepsCount').innerText = stepCount;
+          document.getElementById('offsetX').innerText = userX.toFixed(1);
+          document.getElementById('offsetY').innerText = userY.toFixed(1);
+          ctx.scale(1.4,1.4);
+          drawEverything();
+        } else {
+          alert('Location not found. Please select a valid seat number.');
+        }
       });
 
-      // Orientation tracking
-      window.addEventListener("deviceorientation", (event) => {
-        heading = kfGyro.filter(event.alpha || 0);
-        document.getElementById("direction").innerText = `${heading.toFixed(2)}°`;
+      /********************************************************
+       * 5) ZOOM CONTROLS
+       ********************************************************/
+      document.getElementById('zoomInBtn').addEventListener('click', function () {
+        zoomFactor *= 1.1;
+        drawEverything();
       });
 
-      // Reset tracking
-      document.getElementById("reset").addEventListener("click", () => {
-        userX = 0;
-        userY = 0;
+      document.getElementById('zoomOutBtn').addEventListener('click', function () {
+        zoomFactor /= 1.1;
+        drawEverything();
+      });
+
+      /********************************************************
+       * 6) EVENT LISTENERS
+       ********************************************************/
+      floorPlan.onload = function () {
+        drawEverything();
+      };
+
+      canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        userX = e.clientX - rect.left;
+        userY = e.clientY - rect.top;
+        trajectoryPoints = [];
         stepCount = 0;
-        trajectoryPoints = [{ x: 0, y: 0 }];
-        drawTrajectory();
-        document.getElementById("steps").innerText = "0";
-        document.getElementById("posX").innerText = "0";
-        document.getElementById("posY").innerText = "0";
+        drawEverything();
       });
 
-      document.getElementById("status").innerText = "Sensors are active!";
-      drawTrajectory();
-    });
-  </script>
-</body>
+      window.addEventListener('deviceorientation', (event) => {
+        const rawHeading = event.alpha || 0;
+        heading = headingKF.filter(rawHeading);
+        document.getElementById('headingDeg').innerText = heading.toFixed(2);
+        drawEverything();
+      });
+
+      window.addEventListener('devicemotion', (event) => {
+        if (userX === null || userY === null) return;
+        const rawX = event.accelerationIncludingGravity.x || 0;
+        const rawY = event.accelerationIncludingGravity.y || 0;
+        const rawZ = event.accelerationIncludingGravity.z || 0;
+        gravityX = alpha * gravityX + (1 - alpha) * rawX;
+        gravityY = alpha * gravityY + (1 - alpha) * rawY;
+        gravityZ = alpha * gravityZ + (1 - alpha) * rawZ;
+        const linX = rawX - gravityX;
+        const linY = rawY - gravityY;
+        const linZ = rawZ - gravityZ;
+        const magnitude = Math.sqrt(linX * linX + linY * linY + linZ * linZ);
+        motionBuffer.push(magnitude);
+        if (motionBuffer.length > motionBufferSize) motionBuffer.shift();
+        const stdDev = computeStdDev(motionBuffer);
+        isStationary = stdDev < stationaryStdDevThreshold;
+        const now = performance.now();
+        if (!isStationary) {
+          if (!peakDetected && magnitude > stepThresholdHigh) {
+            peakDetected = true;
+          } else if (peakDetected && magnitude < stepThresholdLow) {
+            if (now - lastPeakTime > minStepInterval) {
+              stepCount++;
+              document.getElementById('stepsCount').innerText = stepCount;
+              const stepPx = stepLengthMeters * pixelsPerMeter;
+              const rad = ((heading - 120) * Math.PI) / 180;
+              userX += -stepPx * Math.sin(rad);
+              userY += -stepPx * Math.cos(rad);
+              document.getElementById('offsetX').innerText = userX.toFixed(1);
+              document.getElementById('offsetY').innerText = userY.toFixed(1);
+              lastPeakTime = now;
+            }
+            peakDetected = false;
+          }
+        }
+        document.getElementById('accX').innerText = linX.toFixed(2);
+        document.getElementById('accY').innerText = linY.toFixed(2);
+        document.getElementById('accZ').innerText = linZ.toFixed(2);
+        document.getElementById('status').innerText = isStationary ? 'Stationary (No real steps).' : 'Moving...';
+        drawEverything();
+      });
+
+      document.getElementById('resetBtn').addEventListener('click', () => {
+        userX = null;
+        userY = null;
+        stepCount = 0;
+        trajectoryPoints = [];
+        peakDetected = false;
+        lastPeakTime = 0;
+        motionBuffer = [];
+        isStationary = true;
+        document.getElementById('stepsCount').innerText = '0';
+        document.getElementById('offsetX').innerText = '0';
+        document.getElementById('offsetY').innerText = '0';
+        drawEverything();
+      });
+
+      document.getElementById('status').innerText = 'Waiting for sensor data...';
+    </script>
+  </body>
 </html>
