@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -10,6 +10,7 @@
         font-family: Arial, sans-serif;
         text-align: center;
         background: #f0f0f0;
+        /* background-color: #fbd551; */
       }
       h1 {
         margin: 0.5em 0 0.2em;
@@ -23,7 +24,7 @@
         font-size: 0.9em;
       }
       #floorCanvas {
-        background: #fff;
+        background: #fbd551;
         cursor: crosshair;
         border: 1px solid #aaa;
       }
@@ -42,27 +43,41 @@
         color: blue;
         margin-top: 0.5em;
       }
+      .heading-section {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+      }
     </style>
   </head>
   <body>
-    <h1>Floor Plan Live Tracking</h1>
+    <div class="heading-section">
+      <h1>Floor Plan Live Tracking</h1>
 
-    <!-- New Location Selector -->
-    <div id="locationSelect">
-      <label for="locationInput">Select Starting Location:</label>
-      <input id="locationInput" type="text" list="locationOptions" placeholder="Type seat number..." />
-      <datalist id="locationOptions">
-        <option value="477"></option>
-        <option value="478"></option>
-        <option value="479"></option>
-        <!-- Add more options as needed -->
-      </datalist>
+      <!-- New Location Selector -->
+      <div id="locationSelect">
+        <label for="locationInput">Select Starting Location:</label>
+        <input
+          id="locationInput"
+          type="text"
+          list="locationOptions"
+          placeholder="Type seat number..."
+        />
+        <datalist id="locationOptions">
+          <option value="477"></option>
+          <option value="478"></option>
+          <option value="479"></option>
+          <!-- Add more options as needed -->
+        </datalist>
+      </div>
       <button id="setLocationBtn">Set Location</button>
     </div>
 
     <div id="info">
       1) Click on the floor plan to set your <strong>starting position</strong>.<br />
-      2) Your navigation icon (SVG) stays fixed while the map rotates based on your device's heading.<br />
+      2) Your navigation icon (SVG) stays fixed while the map rotates based on your device's
+      heading.<br />
       3) Steps move you forward along the direction of the arrow.
     </div>
 
@@ -74,12 +89,15 @@
       <p><strong>Steps:</strong> <span id="stepsCount">0</span></p>
       <p><strong>Sensor Heading:</strong> <span id="headingDeg">0</span>°</p>
       <p>
-        <strong>User Offset (World coords):</strong> X=<span id="offsetX">0</span>,
-        Y=<span id="offsetY">0</span>
+        <strong>User Offset (World coords):</strong> X=<span id="offsetX">0</span>, Y=<span
+          id="offsetY"
+          >0</span
+        >
       </p>
       <p>
-        <strong>Acceleration (Filtered):</strong> X=<span id="accX">0</span>,
-        Y=<span id="accY">0</span>, Z=<span id="accZ">0</span>
+        <strong>Acceleration (Filtered):</strong> X=<span id="accX">0</span>, Y=<span id="accY"
+          >0</span
+        >, Z=<span id="accZ">0</span>
       </p>
       <button id="resetBtn">Reset</button>
       <!-- Zoom controls -->
@@ -158,7 +176,9 @@
       let peakDetected = false;
       let lastPeakTime = 0;
       let minStepInterval = 500;
-      let gravityX = 0, gravityY = 0, gravityZ = 0;
+      let gravityX = 0,
+        gravityY = 0,
+        gravityZ = 0;
       const alpha = 0.9;
       const motionBufferSize = 20;
       let motionBuffer = [];
@@ -211,7 +231,13 @@
         // Define desired icon size (adjust as needed)
         const iconWidth = 60;
         const iconHeight = 60;
-        ctx.drawImage(navIcon, centerX - iconWidth / 2, centerY - iconHeight / 2, iconWidth, iconHeight);
+        ctx.drawImage(
+          navIcon,
+          centerX - iconWidth / 2,
+          centerY - iconHeight / 2,
+          iconWidth,
+          iconHeight,
+        );
       }
 
       /********************************************************
@@ -220,7 +246,7 @@
       const locationConfig = {
         475: { x: 258, y: 997 },
         476: { x: 278, y: 997 },
-        477: { x: 298, y: 997 }
+        477: { x: 298, y: 997 },
       };
 
       document.getElementById('setLocationBtn').addEventListener('click', function () {
@@ -233,7 +259,7 @@
           document.getElementById('stepsCount').innerText = stepCount;
           document.getElementById('offsetX').innerText = userX.toFixed(1);
           document.getElementById('offsetY').innerText = userY.toFixed(1);
-          ctx.scale(1.4,1.4);
+          ctx.scale(1.4, 1.4);
           drawEverything();
         } else {
           alert('Location not found. Please select a valid seat number.');
@@ -314,7 +340,9 @@
         document.getElementById('accX').innerText = linX.toFixed(2);
         document.getElementById('accY').innerText = linY.toFixed(2);
         document.getElementById('accZ').innerText = linZ.toFixed(2);
-        document.getElementById('status').innerText = isStationary ? 'Stationary (No real steps).' : 'Moving...';
+        document.getElementById('status').innerText = isStationary
+          ? 'Stationary (No real steps).'
+          : 'Moving...';
         drawEverything();
       });
 
